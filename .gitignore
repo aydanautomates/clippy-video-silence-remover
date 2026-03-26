@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# Processed videos
+api/tmp/
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Source assets (SVG already in web/public/)
+Clippy_icon_logo.png
+Screenshot *.png
+
+# Next.js
+web/.next/
+web/node_modules/
+web/.git/
