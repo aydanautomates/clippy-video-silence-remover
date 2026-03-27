@@ -5,6 +5,7 @@ import uuid
 import threading
 import importlib
 import tempfile
+import subprocess
 import shutil
 from pathlib import Path
 
@@ -45,10 +46,38 @@ def create_job(input_filename: str) -> str:
     return job_id
 
 
+def create_batch_job(filenames: list[str]) -> str:
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True)
+    jobs[job_id] = {
+        "status": "pending",
+        "step": "Waiting...",
+        "segments": None,
+        "batch": True,
+        "total_files": len(filenames),
+        "current_file": 0,
+        "original_filenames": filenames,
+        "input_paths": [str(job_dir / f"input_{i}.mp4") for i in range(len(filenames))],
+        "output_path": str(job_dir / "merged.mp4"),
+        "input_size_mb": None,
+        "output_size_mb": None,
+    }
+    return job_id
+
+
 def run_job(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
     """Run silence removal in a background thread."""
     thread = threading.Thread(
         target=_process, args=(job_id, threshold, padding, min_silence), daemon=True
+    )
+    thread.start()
+
+
+def run_batch_job(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+    """Run batch silence removal + merge in a background thread."""
+    thread = threading.Thread(
+        target=_process_batch, args=(job_id, threshold, padding, min_silence), daemon=True
     )
     thread.start()
 
@@ -98,6 +127,117 @@ def _process(job_id: str, threshold: int, padding: int, min_silence: int) -> Non
     except Exception as e:
         job["status"] = "error"
         job["step"] = f"Error: {str(e)}"
+
+
+def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+    job = jobs[job_id]
+    input_paths = job["input_paths"]
+    output_path = job["output_path"]
+    job_dir = JOBS_DIR / job_id
+    total = job["total_files"]
+    total_segments = 0
+
+    try:
+        extract_audio, detect_speaking_segments, build_trimmed_video = _reload()
+
+        job["status"] = "processing"
+        trimmed_paths = []
+
+        # Process each video individually
+        for i, input_path in enumerate(input_paths):
+            file_num = i + 1
+            job["current_file"] = file_num
+
+            # Extract audio
+            job["step"] = f"Video {file_num}/{total}: Extracting audio..."
+            audio_path = str(job_dir / f"audio_{i}.wav")
+            extract_audio(input_path, audio_path)
+
+            # Detect segments
+            job["step"] = f"Video {file_num}/{total}: Detecting speech..."
+            segments = detect_speaking_segments(audio_path, threshold, min_silence, padding)
+            Path(audio_path).unlink(missing_ok=True)
+
+            if not segments:
+                job["step"] = f"Video {file_num}/{total}: No speech detected, skipping..."
+                continue
+
+            total_segments += len(segments)
+            job["segments"] = total_segments
+
+            # Build trimmed version
+            trimmed_path = str(job_dir / f"trimmed_{i}.mp4")
+            job["step"] = f"Video {file_num}/{total}: Trimming silence..."
+            build_trimmed_video(input_path, trimmed_path, segments)
+            trimmed_paths.append((trimmed_path, job["original_filenames"][i]))
+
+        if not trimmed_paths:
+            job["status"] = "error"
+            job["step"] = "No speech detected in any video. Try adjusting the threshold."
+            return
+
+        # Store individual trimmed file info for per-clip downloads
+        job["trimmed_files"] = []
+        for path, orig_name in trimmed_paths:
+            size = Path(path).stat().st_size / (1024 * 1024)
+            job["trimmed_files"].append({
+                "path": path,
+                "original_filename": orig_name,
+                "size_mb": round(size, 1),
+            })
+
+        # Merge all trimmed videos
+        all_paths = [p for p, _ in trimmed_paths]
+        if len(all_paths) == 1:
+            shutil.copy2(all_paths[0], output_path)
+        else:
+            job["step"] = "Merging all videos..."
+            _merge_videos(all_paths, output_path, str(job_dir))
+
+        # Calculate stats
+        total_input = sum(Path(p).stat().st_size for p in input_paths) / (1024 * 1024)
+        output_size = Path(output_path).stat().st_size / (1024 * 1024)
+
+        job["status"] = "done"
+        job["step"] = "Complete!"
+        job["input_size_mb"] = round(total_input, 1)
+        job["output_size_mb"] = round(output_size, 1)
+
+    except Exception as e:
+        job["status"] = "error"
+        job["step"] = f"Error: {str(e)}"
+
+
+def _merge_videos(video_paths: list[str], output_path: str, tmpdir: str) -> None:
+    """Concatenate multiple trimmed MP4s into one using FFmpeg concat demuxer."""
+    # Convert each to .ts for seamless concat
+    ts_paths = []
+    for i, path in enumerate(video_paths):
+        ts_path = f"{tmpdir}/merge_{i}.ts"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", path,
+             "-c", "copy",
+             "-avoid_negative_ts", "make_zero",
+             ts_path],
+            check=True, capture_output=True,
+        )
+        ts_paths.append(ts_path)
+
+    # Write concat file
+    concat_file = f"{tmpdir}/merge_concat.txt"
+    with open(concat_file, "w") as f:
+        for ts_path in ts_paths:
+            f.write(f"file '{ts_path}'\n")
+
+    # Merge
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+         "-i", concat_file,
+         "-c", "copy",
+         "-movflags", "+faststart",
+         output_path],
+        check=True, capture_output=True,
+    )
 
 
 def cleanup_old_jobs(max_age_hours: int = 1) -> None:
