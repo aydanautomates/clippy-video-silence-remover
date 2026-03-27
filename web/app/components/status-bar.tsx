@@ -20,6 +20,7 @@ interface StatusBarProps {
   currentFile?: number;
   trimmedFiles?: TrimmedFile[];
   onReset: () => void;
+  onReprocess?: () => void;
 }
 
 export default function StatusBar({
@@ -34,6 +35,7 @@ export default function StatusBar({
   currentFile,
   trimmedFiles,
   onReset,
+  onReprocess,
 }: StatusBarProps) {
   const [showIndividual, setShowIndividual] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -237,12 +239,22 @@ export default function StatusBar({
             )}
           </div>
 
-          <button
-            onClick={onReset}
-            className="w-full rounded-lg border border-neutral-700 px-4 py-2.5 text-sm text-neutral-300 hover:bg-neutral-800 transition-colors"
-          >
-            Process Another
-          </button>
+          <div className="flex gap-3">
+            {onReprocess && (
+              <button
+                onClick={onReprocess}
+                className="flex-1 rounded-lg border border-violet-600 px-4 py-2.5 text-sm text-violet-400 hover:bg-violet-600/10 transition-colors"
+              >
+                Adjust & Reprocess
+              </button>
+            )}
+            <button
+              onClick={onReset}
+              className="flex-1 rounded-lg border border-neutral-700 px-4 py-2.5 text-sm text-neutral-300 hover:bg-neutral-800 transition-colors"
+            >
+              Process Another
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -149,9 +149,8 @@ export default function Home() {
     }
   }, [files, threshold, padding, minSilence, pollStatus]);
 
-  const handleReset = useCallback(() => {
+  const handleReprocess = useCallback(() => {
     stopPolling();
-    setFiles([]);
     setStatus("idle");
     setStep("");
     setSegments(null);
@@ -163,6 +162,11 @@ export default function Home() {
     setCurrentFile(0);
     setTrimmedFiles([]);
   }, [stopPolling]);
+
+  const handleReset = useCallback(() => {
+    handleReprocess();
+    setFiles([]);
+  }, [handleReprocess]);
 
   const isProcessing = status === "uploading" || status === "processing";
 
@@ -217,6 +221,7 @@ export default function Home() {
           currentFile={currentFile}
           trimmedFiles={trimmedFiles}
           onReset={handleReset}
+          onReprocess={handleReprocess}
         />
       </div>
     </main>
