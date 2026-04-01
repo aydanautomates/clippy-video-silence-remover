@@ -16,11 +16,14 @@ Project context for Claude Code. This file helps Claude understand the codebase 
 pip install -r api/requirements.txt
 cd web && npm install && cd ..
 
-# Start both servers
+# Start both servers (production build, instant page loads)
 ./start.sh
+
+# Or dev mode with hot-reload (slow first load)
+./start.sh dev
 ```
 
-`start.sh` auto-detects port conflicts and bumps to the next free port. Default ports: API on 8000, frontend on 3001.
+`start.sh` builds the frontend for production on first run, then serves it via `next start`. Fixed ports: API on 8000, frontend on 3001. Logs go to `.logs/`.
 
 ## Architecture Notes
 

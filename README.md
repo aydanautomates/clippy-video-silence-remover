@@ -18,7 +18,7 @@ Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on
 ## Prerequisites
 
 - **Python 3.10+**
-- **Node.js 18+** (for the web UI)
+- **Node.js 20+** (for the web UI)
 - **FFmpeg** installed and available in PATH
 
 Install FFmpeg if you don't have it:
@@ -88,13 +88,17 @@ pip install -r api/requirements.txt
 # Install frontend dependencies
 cd web && npm install && cd ..
 
-# Start both servers
+# Start Clippy
 ./start.sh
 ```
 
-The app opens automatically in your browser. If not, check the terminal for the URL (usually `http://localhost:3001`).
+On first run, the frontend is built for production (~1 min). After that, startup is instant.
+
+The app opens automatically in your browser at `http://localhost:3001`.
 
 To stop: press `Ctrl+C` or run `./start.sh stop`.
+
+For development with hot-reload: `./start.sh dev`
 
 ---
 
@@ -149,7 +153,7 @@ api/                  # FastAPI backend
   processor.py        # Async job runner wrapping CLI logic
 web/                  # Next.js frontend
   app/page.tsx        # Main UI — upload, controls, status
-start.sh              # Launches both servers with auto port detection
+start.sh              # Builds frontend (once) and launches both servers
 ```
 
 ## License
