@@ -1,8 +1,19 @@
-# Video Auto-Clipper (Silence Removal)
+# Clippy — Automatic Video Silence Remover
 
-Automatically remove silent sections from video files. Includes a CLI tool and a web UI with drag-and-drop upload.
+![Clippy Screenshot](Screenshot%202026-03-26%20at%203.33.59%20AM.png)
+
+Clippy removes silent sections from your videos automatically. Upload one or multiple videos through the web UI, tweak the sensitivity, and download trimmed clips — no editing skills required.
 
 Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on NVIDIA GPUs, falls back to libx264).
+
+## Features
+
+- Drag-and-drop web UI with real-time status
+- Batch processing — upload multiple videos, get them all trimmed
+- Adjustable silence threshold, padding, and minimum silence length
+- Individual clip downloads + merged output for batch jobs
+- CLI tool for scripting and automation
+- Hardware-accelerated encoding (VideoToolbox, NVENC, or software fallback)
 
 ## Prerequisites
 
@@ -10,7 +21,8 @@ Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on
 - **Node.js 18+** (for the web UI)
 - **FFmpeg** installed and available in PATH
 
-Install FFmpeg:
+Install FFmpeg if you don't have it:
+
 ```bash
 # macOS
 brew install ffmpeg
@@ -22,17 +34,34 @@ sudo apt install ffmpeg
 choco install ffmpeg
 ```
 
-## Getting Started
+---
 
-### Option A: Let Claude Code do everything (easiest)
+## Quick Start with Claude Code (Recommended)
 
-If you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed, you don't need to set anything up manually. Just open Claude Code in this project folder and paste the following prompt:
+The fastest way to get Clippy running is with [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It reads the project, installs everything, and starts the app for you.
+
+### 1. Install Claude Code
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+### 2. Clone and open the project
+
+```bash
+git clone https://github.com/aydanautomates/clippy-video-silence-remover.git
+cd clippy-video-silence-remover
+claude
+```
+
+### 3. Ask Claude to set it up
+
+Paste this into Claude Code:
 
 ```
-I just cloned the Video Auto-Clipper project. Can you:
+I just cloned Clippy. Can you:
 
-1. Install all dependencies (Python packages for the backend, npm packages for
-   the frontend)
+1. Install all dependencies (Python packages for the backend, npm packages for the frontend)
 2. Make sure FFmpeg is installed on my system (install it if it's not)
 3. Run ./start.sh to launch the app
 4. Tell me when it's ready and what URL to open
@@ -40,43 +69,45 @@ I just cloned the Video Auto-Clipper project. Can you:
 If anything goes wrong during setup, fix it and keep going.
 ```
 
-Claude Code will read the project, install everything, and start the app for you. When it's done, just open the URL it gives you and drag in your video.
+Claude Code will handle the rest. When it's done, open the URL it gives you and drag in your video.
 
-### Option B: One command start
+---
 
-If dependencies are already installed, just run:
+## Manual Setup
 
-```bash
-./start.sh
-```
-
-This starts both the backend and frontend in one terminal. Open **http://localhost:3000** and you're good to go. Press `Ctrl+C` to stop everything.
-
-### Option C: Full manual setup
-
-If you're setting up for the first time without Claude Code:
+If you prefer to set things up yourself:
 
 ```bash
-# 1. Install dependencies
+# Clone the repo
+git clone https://github.com/aydanautomates/clippy-video-silence-remover.git
+cd clippy-video-silence-remover
+
+# Install Python dependencies
 pip install -r api/requirements.txt
+
+# Install frontend dependencies
 cd web && npm install && cd ..
 
-# 2. Start the app
+# Start both servers
 ./start.sh
 ```
 
-Then open **http://localhost:3000**, drag in a video, adjust settings, and hit Process.
+The app opens automatically in your browser. If not, check the terminal for the URL (usually `http://localhost:3001`).
 
-### Option D: CLI only (no web UI)
+To stop: press `Ctrl+C` or run `./start.sh stop`.
 
-If you just want to process a video from the command line:
+---
+
+## CLI Usage
+
+You can also use the silence remover directly from the command line without the web UI:
 
 ```bash
 pip install -r requirements.txt
 python silence_remover.py input.mp4 output.mp4 --threshold -40 --padding 150 --min-silence 500
 ```
 
-## CLI Arguments
+### Arguments
 
 | Argument | Description | Default |
 |---|---|---|
@@ -86,40 +117,41 @@ python silence_remover.py input.mp4 output.mp4 --threshold -40 --padding 150 --m
 | `--padding` | Buffer around each cut in ms | `100` |
 | `--min-silence` | Minimum silence duration to detect in ms | `300` |
 
+---
+
 ## Recommended Settings
 
-These settings work well as a starting point for talking-head videos, podcasts, and screen recordings:
+Good starting point for talking-head videos, podcasts, and screen recordings:
 
 | Setting | Recommended | What it does |
 |---|---|---|
-| Silence Threshold | `-40dB` | Cuts only the truly quiet parts without eating into soft speech |
-| Padding | `150ms` | Gives each clip a little breathing room so words don't feel chopped |
-| Min Silence Length | `500ms` | Removes long dead air but keeps natural pauses between sentences |
+| Silence Threshold | `-40 dB` | Cuts only the truly quiet parts without eating into soft speech |
+| Padding | `150 ms` | Gives each clip breathing room so words don't feel chopped |
+| Min Silence Length | `500 ms` | Removes long dead air but keeps natural pauses |
 
-```bash
-python silence_remover.py input.mp4 output.mp4 --threshold -40 --padding 150 --min-silence 500
-```
+Every video is different — background noise, mic distance, and speaking style all affect what works best. Use these as a starting point, then adjust with the sliders.
 
-Every video is different though — background noise, mic distance, and speaking style all affect what works best. Use these as a starting point, then play around with the sliders in the web UI until the output feels right for your content.
+### Tuning Tips
 
-## Tuning Tips
+- **Too much silence left?** Lower the threshold (e.g. `-45 dB` or `-50 dB`)
+- **Cutting into speech?** Raise the threshold (e.g. `-30 dB`) or increase padding
+- **Words getting clipped?** Increase padding to `200 ms` or higher
+- **Removing pauses you want to keep?** Increase min silence length to `700 ms+`
 
-- **Too much silence left?** Lower the threshold (e.g. `-45dB` or `-50dB`).
-- **Cutting into speech?** Raise the threshold (e.g. `-30dB`) or increase padding.
-- **Words getting clipped?** Increase padding to `200ms` or higher.
-- **Removing pauses you want to keep?** Increase min silence length to `700ms+`.
+---
 
 ## Project Structure
 
 ```
 silence_remover.py    # CLI tool (standalone)
-api/                  # FastAPI backend for the web UI
+api/                  # FastAPI backend
   main.py             # Upload, status, and download endpoints
-  processor.py        # Wraps CLI logic into async job runner
+  processor.py        # Async job runner wrapping CLI logic
 web/                  # Next.js frontend
-  app/page.tsx        # Main page with upload, controls, and status
+  app/page.tsx        # Main UI — upload, controls, status
+start.sh              # Launches both servers with auto port detection
 ```
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

@@ -88,45 +88,29 @@ def _normalize_video(video_path: str, normalized_path: str) -> None:
 def build_trimmed_video(
     video_path: str, output_path: str, segments: list[tuple[int, int]]
 ) -> None:
-    """Normalize to H.264, then cut and concatenate with stream copy."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
+    """Build trimmed video using FFmpeg select/aselect filters for frame-accurate cuts."""
+    # Build a select expression that keeps only the speech segments
+    # select='between(t,start1,end1)+between(t,start2,end2)+...'
+    parts = []
+    for start_ms, end_ms in segments:
+        s = start_ms / 1000
+        e = end_ms / 1000
+        parts.append(f"between(t,{s:.3f},{e:.3f})")
 
-        # Step 1: Re-encode to H.264 once (hardware accelerated)
-        normalized = str(tmpdir / "normalized.mp4")
-        _normalize_video(video_path, normalized)
+    select_expr = "+".join(parts)
 
-        # Step 2: Cut segments with stream copy (fast, no glitches on H.264)
-        segment_files = []
-        for i, (start_ms, end_ms) in enumerate(segments):
-            seg_file = tmpdir / f"seg_{i:04d}.ts"
-            segment_files.append(seg_file)
-            start_s = start_ms / 1000
-            duration_s = (end_ms - start_ms) / 1000
-            subprocess.run(
-                ["ffmpeg", "-y",
-                 "-ss", str(start_s), "-i", normalized,
-                 "-t", str(duration_s),
-                 "-c", "copy",
-                 "-avoid_negative_ts", "make_zero",
-                 str(seg_file)],
-                check=True, capture_output=True,
-            )
+    encoder = _get_video_encoder()
 
-        # Step 3: Concatenate segments
-        concat_file = tmpdir / "concat.txt"
-        with open(concat_file, "w") as f:
-            for seg_file in segment_files:
-                f.write(f"file '{seg_file}'\n")
-
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
-             "-i", str(concat_file),
-             "-c", "copy",
-             "-movflags", "+faststart",
-             output_path],
-            check=True, capture_output=True,
-        )
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path,
+         "-vf", f"select='{select_expr}',setpts=N/FRAME_RATE/TB",
+         "-af", f"aselect='{select_expr}',asetpts=N/SR/TB",
+         *encoder,
+         "-c:a", "aac", "-b:a", "192k",
+         "-movflags", "+faststart",
+         output_path],
+        check=True, capture_output=True,
+    )
 
 
 def main():

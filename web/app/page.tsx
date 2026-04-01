@@ -12,9 +12,9 @@ const API = "http://localhost:8000";
 
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
-  const [threshold, setThreshold] = useState(-35);
-  const [padding, setPadding] = useState(100);
-  const [minSilence, setMinSilence] = useState(300);
+  const [threshold, setThreshold] = useState(-40);
+  const [padding, setPadding] = useState(50);
+  const [minSilence, setMinSilence] = useState(250);
 
   const [status, setStatus] = useState<Status>("idle");
   const [step, setStep] = useState("");
