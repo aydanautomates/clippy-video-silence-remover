@@ -1,8 +1,9 @@
 #!/bin/bash
 # Start Clippy — API + Frontend
-# Usage: ./start.sh       → start both servers & open browser
-#        ./start.sh stop  → kill Clippy servers only
-#        ./start.sh dev   → dev mode (slow first load, use for development only)
+# Usage: ./start.sh         → start both servers & open browser
+#        ./start.sh stop    → kill Clippy servers only
+#        ./start.sh dev     → dev mode (hot-reload, slow first load)
+#        ./start.sh rebuild → force rebuild frontend, then start
 
 set -e
 
@@ -20,52 +21,37 @@ dim()   { printf '\033[2m%s\033[0m\n' "$1"; }
 
 stop_clippy() {
   local killed=0
+
+  # Kill uvicorn on our API port (command won't contain $DIR, so match by port + process name)
   while IFS= read -r pid; do
     kill "$pid" 2>/dev/null && killed=1
-  done < <(ps aux | grep "uvicorn main:app" | grep "$DIR" | grep -v grep | awk '{print $2}')
+  done < <(lsof -iTCP:$API_PORT -sTCP:LISTEN -P -n -t 2>/dev/null)
+
+  # Kill Next.js processes that belong to this project (parent or child)
   while IFS= read -r pid; do
     kill "$pid" 2>/dev/null && killed=1
   done < <(ps aux | grep -E "next (dev|start)" | grep "$DIR" | grep -v grep | awk '{print $2}')
-  lsof -iTCP:$API_PORT -sTCP:LISTEN -t 2>/dev/null | while read -r pid; do
-    local cmd; cmd=$(ps -p "$pid" -o args= 2>/dev/null)
-    if echo "$cmd" | grep -q "$DIR"; then kill -9 "$pid" 2>/dev/null && killed=1; fi
-  done
-  lsof -iTCP:$FRONTEND_PORT -sTCP:LISTEN -t 2>/dev/null | while read -r pid; do
-    local cmd; cmd=$(ps -p "$pid" -o args= 2>/dev/null)
-    if echo "$cmd" | grep -q "$DIR"; then kill -9 "$pid" 2>/dev/null && killed=1; fi
-  done
+
+  # Kill any remaining next-server children on our frontend port
+  while IFS= read -r pid; do
+    kill "$pid" 2>/dev/null && killed=1
+  done < <(lsof -iTCP:$FRONTEND_PORT -sTCP:LISTEN -P -n -t 2>/dev/null)
+
   if [ "$killed" = 1 ]; then sleep 1; fi
   green "Clippy stopped."
 }
 
 check_port() {
+  # Called after stop_clippy — anything still on the port is not ours
   local port=$1
   if lsof -iTCP:"$port" -sTCP:LISTEN -P -n &>/dev/null; then
-    local pids cmd is_ours=0
-    pids=$(lsof -iTCP:"$port" -sTCP:LISTEN -P -n -t 2>/dev/null)
-    for pid in $pids; do
-      cmd=$(ps -p "$pid" -o args= 2>/dev/null || echo "unknown")
-      # Match project path directly, or match next-server/uvicorn spawned by us
-      if echo "$cmd" | grep -q "$DIR" || echo "$cmd" | grep -qE "^next-server |^/.*uvicorn"; then
-        # Check parent process too for child workers
-        local ppid_cmd
-        ppid_cmd=$(ps -p "$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ')" -o args= 2>/dev/null || echo "")
-        if echo "$cmd" | grep -q "$DIR" || echo "$ppid_cmd" | grep -q "$DIR"; then
-          kill -9 "$pid" 2>/dev/null; is_ours=1
-        fi
-      fi
-    done
-    if [ "$is_ours" = 1 ]; then
-      sleep 1
-    elif lsof -iTCP:"$port" -sTCP:LISTEN -P -n &>/dev/null; then
-      local show_pid show_cmd
-      show_pid=$(lsof -iTCP:"$port" -sTCP:LISTEN -P -n -t 2>/dev/null | head -1)
-      show_cmd=$(ps -p "$show_pid" -o args= 2>/dev/null || echo "unknown")
-      red "ERROR: Port $port is already in use by another app."
-      dim "  PID $show_pid: $show_cmd"
-      dim "  Free it up and try again, or kill it with: kill $show_pid"
-      exit 1
-    fi
+    local show_pid show_cmd
+    show_pid=$(lsof -iTCP:"$port" -sTCP:LISTEN -P -n -t 2>/dev/null | head -1)
+    show_cmd=$(ps -p "$show_pid" -o args= 2>/dev/null || echo "unknown")
+    red "ERROR: Port $port is already in use by another app."
+    dim "  PID $show_pid: $show_cmd"
+    dim "  Free it up and try again, or kill it with: kill $show_pid"
+    exit 1
   fi
 }
 
@@ -113,9 +99,24 @@ fi
 
 if [ "$DEV_MODE" = 0 ]; then
   # Production mode — build once, starts instantly
-  if [ ! -d "$DIR/web/.next" ] || [ "$DIR/web/app/page.tsx" -nt "$DIR/web/.next/BUILD_ID" ] 2>/dev/null; then
+  needs_build=0
+  if [ ! -f "$DIR/web/.next/BUILD_ID" ]; then
+    needs_build=1
+  elif [ "$1" = "rebuild" ]; then
+    needs_build=1
+  else
+    # Rebuild if any source file is newer than the last build
+    latest_source=$(find "$DIR/web/app" "$DIR/web" -maxdepth 1 \
+      \( -name "*.tsx" -o -name "*.ts" -o -name "*.css" -o -name "*.json" -o -name "next.config.*" \) \
+      -newer "$DIR/web/.next/BUILD_ID" 2>/dev/null | head -1)
+    if [ -n "$latest_source" ]; then
+      needs_build=1
+    fi
+  fi
+
+  if [ "$needs_build" = 1 ]; then
     echo ""
-    echo "Building frontend (one-time)..."
+    echo "Building frontend..."
     cd "$DIR/web"
     npx next build >"$LOG_DIR/build.log" 2>&1
     if [ $? -ne 0 ]; then

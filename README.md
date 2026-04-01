@@ -4,7 +4,9 @@
 
 Clippy removes silent sections from your videos automatically. Upload one or multiple videos through the web UI, tweak the sensitivity, and download trimmed clips — no editing skills required.
 
-Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on NVIDIA GPUs, falls back to libx264).
+> **macOS only.** Clippy currently runs on Mac. Windows and Linux are not supported yet.
+
+Uses hardware-accelerated encoding when available (VideoToolbox on Mac, falls back to libx264).
 
 ## Features
 
@@ -17,6 +19,7 @@ Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on
 
 ## Prerequisites
 
+- **macOS** (Apple Silicon or Intel)
 - **Python 3.10+**
 - **Node.js 20+** (for the web UI)
 - **FFmpeg** installed and available in PATH
@@ -24,14 +27,7 @@ Uses hardware-accelerated encoding when available (VideoToolbox on Mac, NVENC on
 Install FFmpeg if you don't have it:
 
 ```bash
-# macOS
 brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt install ffmpeg
-
-# Windows (with chocolatey)
-choco install ffmpeg
 ```
 
 ---
