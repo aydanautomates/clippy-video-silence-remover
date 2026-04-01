@@ -1,6 +1,6 @@
 # Clippy — Automatic Video Silence Remover
 
-![Clippy Screenshot](Screenshot%202026-03-26%20at%203.33.59%20AM.png)
+![Clippy Screenshot](Clippy_Screenshot.png)
 
 Clippy removes silent sections from your videos automatically. Upload one or multiple videos through the web UI, tweak the sensitivity, and download trimmed clips — no editing skills required.
 
