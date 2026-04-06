@@ -36,3 +36,5 @@ cd web && npm install && cd ..
 
 - If sliders/UI isn't interactive, it's a hydration failure — check that `allowedDevOrigins` includes the hostname being used in the browser
 - `api/tmp/` is where processed videos are stored temporarily — gitignored
+- Next.js dev mode (`next dev`) with Turbopack on Node v25 has ~2.5 min first-compile times — this is why `start.sh` defaults to production build (`next build` + `next start`)
+- Next.js 16.2.1 crashes on Node v25 with `isStableBuild is not a function` — 16.2.2 fixes this
