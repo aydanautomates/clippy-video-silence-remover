@@ -26,6 +26,7 @@ export default function Home() {
   const [totalFiles, setTotalFiles] = useState<number>(0);
   const [currentFile, setCurrentFile] = useState<number>(0);
   const [trimmedFiles, setTrimmedFiles] = useState<{ index: number; filename: string; size_mb: number }[]>([]);
+  const [segmentCount, setSegmentCount] = useState<number | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,6 +69,7 @@ export default function Home() {
             setInputSizeMb(data.input_size_mb);
             setOutputSizeMb(data.output_size_mb);
             if (data.trimmed_files) setTrimmedFiles(data.trimmed_files);
+            if (data.segment_count) setSegmentCount(data.segment_count);
             stopPolling();
           } else if (data.status === "error") {
             setStatus("error");
@@ -161,6 +163,7 @@ export default function Home() {
     setTotalFiles(0);
     setCurrentFile(0);
     setTrimmedFiles([]);
+    setSegmentCount(null);
   }, [stopPolling]);
 
   const handleReset = useCallback(() => {
@@ -220,6 +223,7 @@ export default function Home() {
           totalFiles={totalFiles}
           currentFile={currentFile}
           trimmedFiles={trimmedFiles}
+          segmentCount={segmentCount}
           onReset={handleReset}
           onReprocess={handleReprocess}
         />

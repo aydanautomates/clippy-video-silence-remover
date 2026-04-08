@@ -2,6 +2,7 @@
 """Remove silence from video files using FFmpeg and pydub."""
 
 import argparse
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -71,30 +72,22 @@ def _get_video_encoder() -> list[str]:
     return ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
 
 
-def _normalize_video(video_path: str, normalized_path: str) -> None:
-    """Re-encode video to H.264/AAC MP4 so segment cuts work cleanly."""
-    encoder = _get_video_encoder()
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path,
-         "-map", "0:v:0", "-map", "0:a:0",
-         *encoder,
-         "-c:a", "aac", "-b:a", "192k",
-         "-movflags", "+faststart",
-         normalized_path],
-        check=True, capture_output=True,
-    )
-
-
 def build_trimmed_video(
-    video_path: str, output_path: str, segments: list[tuple[int, int]]
-) -> None:
-    """Build trimmed video by normalizing, cutting segments with stream copy, and concatenating."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Step 1: Normalize to H.264/AAC so stream-copy cuts work cleanly
-        normalized = str(Path(tmpdir) / "normalized.mp4")
-        _normalize_video(video_path, normalized)
+    video_path: str, output_path: str, segments: list[tuple[int, int]],
+    keep_segments_dir: str | None = None,
+) -> list[str]:
+    """Build trimmed video by re-encoding each segment and concatenating via MPEG-TS.
 
-        # Step 2: Cut each segment with stream copy (preserves exact A/V sync)
+    Each segment is independently encoded from the original, giving frame-accurate
+    cuts with perfect A/V sync. TS intermediate concat avoids AAC stutter at boundaries.
+
+    If keep_segments_dir is provided, numbered segment files (001.mp4, 002.mp4, ...)
+    are saved there for individual download. Returns list of saved segment paths.
+    """
+    encoder = _get_video_encoder()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Step 1: Cut and re-encode each segment (frame-accurate, no keyframe issues)
         seg_files = []
         for i, (start_ms, end_ms) in enumerate(segments):
             seg_file = str(Path(tmpdir) / f"seg_{i:04d}.mp4")
@@ -103,29 +96,59 @@ def build_trimmed_video(
             subprocess.run(
                 ["ffmpeg", "-y",
                  "-ss", f"{start_s:.3f}",
-                 "-i", normalized,
+                 "-i", video_path,
                  "-t", f"{duration_s:.3f}",
-                 "-c", "copy",
+                 "-map", "0:v:0", "-map", "0:a:0",
+                 *encoder,
+                 "-c:a", "aac", "-b:a", "192k",
                  "-avoid_negative_ts", "make_zero",
+                 "-movflags", "+faststart",
                  seg_file],
                 check=True, capture_output=True,
             )
             seg_files.append(seg_file)
 
-        # Step 3: Concatenate segments with concat demuxer (no re-encode)
+        # Step 2: Save numbered segments if requested
+        saved_segments: list[str] = []
+        if keep_segments_dir:
+            Path(keep_segments_dir).mkdir(parents=True, exist_ok=True)
+            for i, seg_file in enumerate(seg_files):
+                dest = str(Path(keep_segments_dir) / f"{i + 1:03d}.mp4")
+                shutil.copy2(seg_file, dest)
+                saved_segments.append(dest)
+
+        # Step 3: Convert segments to MPEG-TS for seamless concatenation
+        # (MP4 concat has AAC frame alignment issues that cause stutter)
+        ts_files = []
+        for i, seg_file in enumerate(seg_files):
+            ts_file = str(Path(tmpdir) / f"seg_{i:04d}.ts")
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", seg_file,
+                 "-c", "copy",
+                 "-bsf:v", "h264_mp4toannexb",
+                 "-f", "mpegts",
+                 ts_file],
+                check=True, capture_output=True,
+            )
+            ts_files.append(ts_file)
+
+        # Step 4: Concatenate .ts files and mux back to MP4
         concat_file = str(Path(tmpdir) / "concat.txt")
         with open(concat_file, "w") as f:
-            for seg_file in seg_files:
-                f.write(f"file '{seg_file}'\n")
+            for ts_file in ts_files:
+                f.write(f"file '{ts_file}'\n")
 
         subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
              "-i", concat_file,
              "-c", "copy",
+             "-bsf:a", "aac_adtstoasc",
              "-movflags", "+faststart",
              output_path],
             check=True, capture_output=True,
         )
+
+    return saved_segments
 
 
 def main():

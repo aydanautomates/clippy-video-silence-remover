@@ -38,6 +38,13 @@ stop_clippy() {
   done < <(lsof -iTCP:$FRONTEND_PORT -sTCP:LISTEN -P -n -t 2>/dev/null)
 
   if [ "$killed" = 1 ]; then sleep 1; fi
+
+  # Clean up all processed/uploaded files
+  if [ -d "$DIR/api/tmp" ]; then
+    rm -rf "$DIR/api/tmp"/*
+    dim "  Cleaned up tmp files."
+  fi
+
   green "Clippy stopped."
 }
 

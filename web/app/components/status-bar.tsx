@@ -19,6 +19,7 @@ interface StatusBarProps {
   totalFiles?: number;
   currentFile?: number;
   trimmedFiles?: TrimmedFile[];
+  segmentCount?: number | null;
   onReset: () => void;
   onReprocess?: () => void;
 }
@@ -34,6 +35,7 @@ export default function StatusBar({
   totalFiles,
   currentFile,
   trimmedFiles,
+  segmentCount,
   onReset,
   onReprocess,
 }: StatusBarProps) {
@@ -160,6 +162,16 @@ export default function StatusBar({
                 ? "Download Merged Video"
                 : "Download Trimmed Video"}
             </a>
+
+            {segmentCount && segmentCount > 1 && (
+              <a
+                href={`http://localhost:8000/api/download-segments/${jobId}`}
+                download
+                className="block w-full rounded-lg border border-violet-600 py-2.5 text-center text-sm font-medium text-violet-400 hover:bg-violet-600/10 transition-colors"
+              >
+                Download Timeline Clips ({segmentCount} segments)
+              </a>
+            )}
 
             {/* Individual downloads for batch */}
             {isBatchMulti && trimmedFiles && trimmedFiles.length > 1 && (

@@ -111,13 +111,23 @@ def _process(job_id: str, threshold: int, padding: int, min_silence: int) -> Non
 
         job["segments"] = len(segments)
 
-        # Step 3: Build trimmed video
+        # Step 3: Build trimmed video (keep individual segments for timeline export)
         job["step"] = "Building trimmed video..."
-        build_trimmed_video(input_path, output_path, segments)
+        segments_dir = str(JOBS_DIR / job_id / "segments")
+        saved_segs = build_trimmed_video(input_path, output_path, segments, keep_segments_dir=segments_dir)
+
+        # Store segment file info for download
+        job["segment_files"] = [
+            {"path": p, "size_mb": round(Path(p).stat().st_size / (1024 * 1024), 2)}
+            for p in saved_segs
+        ]
 
         # Calculate stats
         input_size = Path(input_path).stat().st_size / (1024 * 1024)
         output_size = Path(output_path).stat().st_size / (1024 * 1024)
+
+        # Delete input file — no longer needed
+        Path(input_path).unlink(missing_ok=True)
 
         job["status"] = "done"
         job["step"] = "Complete!"
@@ -165,11 +175,15 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
             total_segments += len(segments)
             job["segments"] = total_segments
 
-            # Build trimmed version
+            # Build trimmed version (keep segments for timeline export)
             trimmed_path = str(job_dir / f"trimmed_{i}.mp4")
+            segments_dir = str(job_dir / f"segments_{i}")
             job["step"] = f"Video {file_num}/{total}: Trimming silence..."
-            build_trimmed_video(input_path, trimmed_path, segments)
-            trimmed_paths.append((trimmed_path, job["original_filenames"][i]))
+            saved_segs = build_trimmed_video(input_path, trimmed_path, segments, keep_segments_dir=segments_dir)
+            trimmed_paths.append((trimmed_path, job["original_filenames"][i], saved_segs))
+
+            # Delete input file — no longer needed
+            Path(input_path).unlink(missing_ok=True)
 
         if not trimmed_paths:
             job["status"] = "error"
@@ -178,16 +192,24 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
 
         # Store individual trimmed file info for per-clip downloads
         job["trimmed_files"] = []
-        for path, orig_name in trimmed_paths:
+        all_segment_files: list[str] = []
+        for path, orig_name, saved_segs in trimmed_paths:
             size = Path(path).stat().st_size / (1024 * 1024)
             job["trimmed_files"].append({
                 "path": path,
                 "original_filename": orig_name,
                 "size_mb": round(size, 1),
             })
+            all_segment_files.extend(saved_segs)
+
+        # Store all segment files across all videos for timeline export
+        job["segment_files"] = [
+            {"path": p, "size_mb": round(Path(p).stat().st_size / (1024 * 1024), 2)}
+            for p in all_segment_files
+        ]
 
         # Merge all trimmed videos
-        all_paths = [p for p, _ in trimmed_paths]
+        all_paths = [p for p, _, _ in trimmed_paths]
         if len(all_paths) == 1:
             shutil.copy2(all_paths[0], output_path)
         else:

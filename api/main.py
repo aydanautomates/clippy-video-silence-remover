@@ -109,6 +109,7 @@ async def get_status(job_id: str):
         "segments": job["segments"],
         "input_size_mb": job.get("input_size_mb"),
         "output_size_mb": job.get("output_size_mb"),
+        "segment_count": len(job["segment_files"]) if job.get("segment_files") else None,
     }
 
     # Include batch-specific fields
@@ -226,5 +227,35 @@ async def download_zip(job_id: str, indices: str = Query("")):
     return FileResponse(
         path=str(zip_path),
         filename="clippy_trimmed_clips.zip",
+        media_type="application/zip",
+    )
+
+
+@app.get("/api/download-segments/{job_id}")
+async def download_segments(job_id: str):
+    """Download all speech segments as numbered clips (001.mp4, 002.mp4, ...) in a zip."""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+
+    job = jobs[job_id]
+    if job["status"] != "done":
+        raise HTTPException(400, "Video not ready yet")
+
+    seg_files = job.get("segment_files")
+    if not seg_files:
+        raise HTTPException(400, "No segment files available")
+
+    from processor import JOBS_DIR
+    zip_path = JOBS_DIR / job_id / "clippy_timeline_clips.zip"
+
+    with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_STORED) as zf:
+        for sf in seg_files:
+            file_path = Path(sf["path"])
+            if file_path.exists():
+                zf.write(str(file_path), file_path.name)
+
+    return FileResponse(
+        path=str(zip_path),
+        filename="clippy_timeline_clips.zip",
         media_type="application/zip",
     )
