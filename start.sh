@@ -144,17 +144,26 @@ echo ""
 
 # API
 cd "$DIR/api"
-python3 -m uvicorn main:app --reload --port $API_PORT \
+env -u NOTION_API_TOKEN -u SUPABASE_SERVICE_ROLE_KEY -u BLOB_READ_WRITE_TOKEN \
+    -u BLOB_READ_WRITE_TOKEN_CAROUSELS -u GOOGLE_PLACES_API_KEY -u APIFY_API_TOKEN \
+    -u VERCEL_TOKEN \
+  python3 -m uvicorn main:app --reload --port $API_PORT \
   >"$LOG_DIR/api.log" 2>&1 &
 API_PID=$!
 
 # Frontend
 cd "$DIR/web"
 if [ "$DEV_MODE" = 1 ]; then
-  node node_modules/.bin/next dev -p $FRONTEND_PORT \
+  env -u NOTION_API_TOKEN -u SUPABASE_SERVICE_ROLE_KEY -u BLOB_READ_WRITE_TOKEN \
+      -u BLOB_READ_WRITE_TOKEN_CAROUSELS -u GOOGLE_PLACES_API_KEY -u APIFY_API_TOKEN \
+      -u VERCEL_TOKEN \
+    node node_modules/.bin/next dev -p $FRONTEND_PORT \
     >"$LOG_DIR/frontend.log" 2>&1 &
 else
-  PORT=$FRONTEND_PORT node node_modules/.bin/next start -p $FRONTEND_PORT \
+  env -u NOTION_API_TOKEN -u SUPABASE_SERVICE_ROLE_KEY -u BLOB_READ_WRITE_TOKEN \
+      -u BLOB_READ_WRITE_TOKEN_CAROUSELS -u GOOGLE_PLACES_API_KEY -u APIFY_API_TOKEN \
+      -u VERCEL_TOKEN \
+    PORT=$FRONTEND_PORT node node_modules/.bin/next start -p $FRONTEND_PORT \
     >"$LOG_DIR/frontend.log" 2>&1 &
 fi
 FRONTEND_PID=$!
