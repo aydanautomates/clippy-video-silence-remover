@@ -152,11 +152,14 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
 
         job["status"] = "processing"
         trimmed_paths = []
+        total_input_bytes = 0
 
         # Process each video individually
         for i, input_path in enumerate(input_paths):
             file_num = i + 1
             job["current_file"] = file_num
+
+            total_input_bytes += Path(input_path).stat().st_size
 
             # Extract audio
             job["step"] = f"Video {file_num}/{total}: Extracting audio..."
@@ -170,6 +173,7 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
 
             if not segments:
                 job["step"] = f"Video {file_num}/{total}: No speech detected, skipping..."
+                Path(input_path).unlink(missing_ok=True)
                 continue
 
             total_segments += len(segments)
@@ -217,7 +221,7 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
             _merge_videos(all_paths, output_path, str(job_dir))
 
         # Calculate stats
-        total_input = sum(Path(p).stat().st_size for p in input_paths) / (1024 * 1024)
+        total_input = total_input_bytes / (1024 * 1024)
         output_size = Path(output_path).stat().st_size / (1024 * 1024)
 
         job["status"] = "done"

@@ -31,6 +31,7 @@ cd web && npm install && cd ..
 - `next.config.ts` has `allowedDevOrigins: ["127.0.0.1"]` — required for hydration when accessing via 127.0.0.1
 - Video processing is async — frontend polls `/api/status/:id` every 2 seconds
 - Hardware-accelerated encoding: VideoToolbox (Mac), NVENC (NVIDIA), libx264 fallback
+- `start.sh` strips sensitive env vars (Notion, Supabase, Vercel tokens, etc.) from child processes via `env -u` — prevents token leakage in `ps` output
 
 ## Known Gotchas
 
