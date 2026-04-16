@@ -12,7 +12,8 @@ Uses hardware-accelerated encoding when available (VideoToolbox on Mac, falls ba
 
 - Drag-and-drop web UI with real-time status
 - Batch processing — upload multiple videos, get them all trimmed
-- Adjustable silence threshold, padding, and minimum silence length
+- Independent **start** and **end** padding, plus adjustable silence threshold and minimum silence length
+- **Bad-take keyword** — say a phrase (e.g. "cut that take") after a flubbed take and Clippy drops it automatically using on-device Whisper transcription
 - Individual clip downloads + merged output for batch jobs
 - CLI tool for scripting and automation
 - Hardware-accelerated encoding (VideoToolbox, NVENC, or software fallback)
@@ -103,8 +104,12 @@ For development with hot-reload: `./start.sh dev`
 You can also use the silence remover directly from the command line without the web UI:
 
 ```bash
-pip install -r requirements.txt
-python silence_remover.py input.mp4 output.mp4 --threshold -40 --padding 150 --min-silence 500
+pip install -r api/requirements.txt
+python silence_remover.py input.mp4 output.mp4 \
+  --threshold -40 \
+  --start-padding 80 --end-padding 150 \
+  --min-silence 500 \
+  --keyword "cut that take"
 ```
 
 ### Arguments
@@ -114,8 +119,12 @@ python silence_remover.py input.mp4 output.mp4 --threshold -40 --padding 150 --m
 | `input` | Input video file path | (required) |
 | `output` | Output video file path | (required) |
 | `--threshold` | Silence threshold in dB (lower = more sensitive) | `-35` |
-| `--padding` | Buffer around each cut in ms | `100` |
+| `--start-padding` | Buffer kept BEFORE each speech segment (ms) | `80` |
+| `--end-padding` | Buffer kept AFTER each speech segment (ms) | `150` |
 | `--min-silence` | Minimum silence duration to detect in ms | `300` |
+| `--keyword` | Phrase to trigger bad-take removal (empty = disabled) | `""` |
+
+The `--keyword` flag uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) to transcribe the audio. First run downloads the ~150MB "base" model to `~/.cache/huggingface/`.
 
 ---
 
@@ -126,8 +135,10 @@ Good starting point for talking-head videos, podcasts, and screen recordings:
 | Setting | Recommended | What it does |
 |---|---|---|
 | Silence Threshold | `-40 dB` | Cuts only the truly quiet parts without eating into soft speech |
-| Padding | `150 ms` | Gives each clip breathing room so words don't feel chopped |
+| Start Padding | `80 ms` | Keeps the first syllable of each clip intact |
+| End Padding | `150 ms` | Trailing consonants/breaths usually need more room than openings |
 | Min Silence Length | `500 ms` | Removes long dead air but keeps natural pauses |
+| Bad-take Keyword | `cut that take` | Leave empty to skip Whisper transcription and keep jobs fast |
 
 Every video is different — background noise, mic distance, and speaking style all affect what works best. Use these as a starting point, then adjust with the sliders.
 
@@ -135,8 +146,10 @@ Every video is different — background noise, mic distance, and speaking style 
 
 - **Too much silence left?** Lower the threshold (e.g. `-45 dB` or `-50 dB`)
 - **Cutting into speech?** Raise the threshold (e.g. `-30 dB`) or increase padding
-- **Words getting clipped?** Increase padding to `200 ms` or higher
+- **Openings getting clipped?** Raise start padding
+- **Endings getting chopped?** Raise end padding to `200 ms+`
 - **Removing pauses you want to keep?** Increase min silence length to `700 ms+`
+- **Bad-take filter over-cutting?** The filter removes the segment with the keyword AND the segment right before it — so don't say the keyword immediately after a good take. Pause clearly before saying it.
 
 ---
 
