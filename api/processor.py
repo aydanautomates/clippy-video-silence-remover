@@ -66,23 +66,48 @@ def create_batch_job(filenames: list[str]) -> str:
     return job_id
 
 
-def run_job(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+def run_job(
+    job_id: str,
+    threshold: int,
+    start_padding: int,
+    end_padding: int,
+    min_silence: int,
+    keyword: str = "",
+) -> None:
     """Run silence removal in a background thread."""
     thread = threading.Thread(
-        target=_process, args=(job_id, threshold, padding, min_silence), daemon=True
+        target=_process,
+        args=(job_id, threshold, start_padding, end_padding, min_silence, keyword),
+        daemon=True,
     )
     thread.start()
 
 
-def run_batch_job(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+def run_batch_job(
+    job_id: str,
+    threshold: int,
+    start_padding: int,
+    end_padding: int,
+    min_silence: int,
+    keyword: str = "",
+) -> None:
     """Run batch silence removal + merge in a background thread."""
     thread = threading.Thread(
-        target=_process_batch, args=(job_id, threshold, padding, min_silence), daemon=True
+        target=_process_batch,
+        args=(job_id, threshold, start_padding, end_padding, min_silence, keyword),
+        daemon=True,
     )
     thread.start()
 
 
-def _process(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+def _process(
+    job_id: str,
+    threshold: int,
+    start_padding: int,
+    end_padding: int,
+    min_silence: int,
+    keyword: str = "",
+) -> None:
     job = jobs[job_id]
     input_path = job["input_path"]
     output_path = job["output_path"]
@@ -99,7 +124,14 @@ def _process(job_id: str, threshold: int, padding: int, min_silence: int) -> Non
 
         # Step 2: Detect segments
         job["step"] = "Detecting speech segments..."
-        segments = detect_speaking_segments(audio_path, threshold, min_silence, padding)
+        segments = detect_speaking_segments(
+            audio_path, threshold, min_silence, start_padding, end_padding
+        )
+
+        if segments and keyword.strip():
+            job["step"] = "Detecting bad takes..."
+            from bad_take_filter import filter_bad_takes
+            segments = filter_bad_takes(audio_path, segments, keyword)
 
         # Clean up temp audio
         Path(audio_path).unlink(missing_ok=True)
@@ -139,7 +171,14 @@ def _process(job_id: str, threshold: int, padding: int, min_silence: int) -> Non
         job["step"] = f"Error: {str(e)}"
 
 
-def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) -> None:
+def _process_batch(
+    job_id: str,
+    threshold: int,
+    start_padding: int,
+    end_padding: int,
+    min_silence: int,
+    keyword: str = "",
+) -> None:
     job = jobs[job_id]
     input_paths = job["input_paths"]
     output_path = job["output_path"]
@@ -168,7 +207,15 @@ def _process_batch(job_id: str, threshold: int, padding: int, min_silence: int) 
 
             # Detect segments
             job["step"] = f"Video {file_num}/{total}: Detecting speech..."
-            segments = detect_speaking_segments(audio_path, threshold, min_silence, padding)
+            segments = detect_speaking_segments(
+                audio_path, threshold, min_silence, start_padding, end_padding
+            )
+
+            if segments and keyword.strip():
+                job["step"] = f"Video {file_num}/{total}: Detecting bad takes..."
+                from bad_take_filter import filter_bad_takes
+                segments = filter_bad_takes(audio_path, segments, keyword)
+
             Path(audio_path).unlink(missing_ok=True)
 
             if not segments:

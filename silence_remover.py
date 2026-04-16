@@ -22,7 +22,11 @@ def extract_audio(video_path: str, audio_path: str) -> None:
 
 
 def detect_speaking_segments(
-    audio_path: str, silence_thresh: int, min_silence_len: int = 300, padding: int = 100
+    audio_path: str,
+    silence_thresh: int,
+    min_silence_len: int = 300,
+    start_padding: int = 80,
+    end_padding: int = 150,
 ) -> list[tuple[int, int]]:
     """Detect non-silent segments in audio. Returns list of (start_ms, end_ms)."""
     audio = AudioSegment.from_wav(audio_path)
@@ -36,13 +40,12 @@ def detect_speaking_segments(
         print("Warning: No speech detected. Check your threshold value.")
         return []
 
-    # Apply padding
     duration_ms = len(audio)
     padded = []
     for start, end in segments:
         padded.append((
-            max(0, start - padding),
-            min(duration_ms, end + padding),
+            max(0, start - start_padding),
+            min(duration_ms, end + end_padding),
         ))
 
     # Merge overlapping segments
@@ -162,12 +165,20 @@ def main():
         help="Silence threshold in dB (default: -35)"
     )
     parser.add_argument(
-        "--padding", type=int, default=100,
-        help="Padding in ms around each cut (default: 100)"
+        "--start-padding", type=int, default=80,
+        help="Padding in ms kept before each speech segment (default: 80)"
+    )
+    parser.add_argument(
+        "--end-padding", type=int, default=150,
+        help="Padding in ms kept after each speech segment (default: 150)"
     )
     parser.add_argument(
         "--min-silence", type=int, default=300,
         help="Minimum silence duration in ms to detect (default: 300)"
+    )
+    parser.add_argument(
+        "--keyword", type=str, default="",
+        help="Bad-take keyword. If set, transcribes audio with faster-whisper and drops any segment whose transcript contains this phrase, plus the segment immediately before it."
     )
     args = parser.parse_args()
 
@@ -176,7 +187,14 @@ def main():
         sys.exit(1)
 
     print(f"Processing: {args.input}")
-    print(f"Threshold: {args.threshold}dB | Padding: {args.padding}ms | Min silence: {args.min_silence}ms")
+    print(
+        f"Threshold: {args.threshold}dB | "
+        f"Start padding: {args.start_padding}ms | "
+        f"End padding: {args.end_padding}ms | "
+        f"Min silence: {args.min_silence}ms"
+    )
+    if args.keyword:
+        print(f"Bad-take keyword: {args.keyword!r}")
 
     # Step 1: Extract audio
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -188,8 +206,21 @@ def main():
     # Step 2: Detect speech segments
     print("Detecting speech segments...")
     segments = detect_speaking_segments(
-        audio_path, args.threshold, args.min_silence, args.padding
+        audio_path,
+        args.threshold,
+        args.min_silence,
+        args.start_padding,
+        args.end_padding,
     )
+
+    if segments and args.keyword.strip():
+        print("Transcribing to detect bad takes...")
+        from bad_take_filter import filter_bad_takes
+        before = len(segments)
+        segments = filter_bad_takes(audio_path, segments, args.keyword)
+        dropped = before - len(segments)
+        if dropped:
+            print(f"Dropped {dropped} segment(s) containing the keyword (and preceding takes).")
 
     Path(audio_path).unlink(missing_ok=True)
 

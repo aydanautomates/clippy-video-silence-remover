@@ -26,8 +26,10 @@ MAX_UPLOAD_MB = 2000
 async def upload_video(
     file: UploadFile = File(...),
     threshold: int = Form(-35),
-    padding: int = Form(100),
+    start_padding: int = Form(80),
+    end_padding: int = Form(150),
     min_silence: int = Form(300),
+    keyword: str = Form(""),
 ):
     if not file.filename:
         raise HTTPException(400, "No file provided")
@@ -49,7 +51,7 @@ async def upload_video(
         raise HTTPException(413, f"File too large ({file_size_mb:.0f}MB). Max is {MAX_UPLOAD_MB}MB.")
 
     # Start processing in background
-    run_job(job_id, threshold, padding, min_silence)
+    run_job(job_id, threshold, start_padding, end_padding, min_silence, keyword)
 
     return {"job_id": job_id}
 
@@ -58,8 +60,10 @@ async def upload_video(
 async def upload_batch(
     files: List[UploadFile] = File(...),
     threshold: int = Form(-35),
-    padding: int = Form(100),
+    start_padding: int = Form(80),
+    end_padding: int = Form(150),
     min_silence: int = Form(300),
+    keyword: str = Form(""),
     order: str = Form(""),
 ):
     if not files:
@@ -92,7 +96,7 @@ async def upload_batch(
         raise HTTPException(413, f"Total size too large ({total_size_mb:.0f}MB). Max is {MAX_UPLOAD_MB}MB.")
 
     # Start batch processing
-    run_batch_job(job_id, threshold, padding, min_silence)
+    run_batch_job(job_id, threshold, start_padding, end_padding, min_silence, keyword)
 
     return {"job_id": job_id}
 

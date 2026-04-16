@@ -13,8 +13,10 @@ const API = "http://localhost:8000";
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
   const [threshold, setThreshold] = useState(-40);
-  const [padding, setPadding] = useState(80);
+  const [startPadding, setStartPadding] = useState(80);
+  const [endPadding, setEndPadding] = useState(150);
   const [minSilence, setMinSilence] = useState(250);
+  const [keyword, setKeyword] = useState("cut that take");
 
   const [status, setStatus] = useState<Status>("idle");
   const [step, setStep] = useState("");
@@ -102,8 +104,10 @@ export default function Home() {
         // Single file — use original endpoint
         formData.append("file", files[0]);
         formData.append("threshold", threshold.toString());
-        formData.append("padding", padding.toString());
+        formData.append("start_padding", startPadding.toString());
+        formData.append("end_padding", endPadding.toString());
         formData.append("min_silence", minSilence.toString());
+        formData.append("keyword", keyword);
 
         const res = await fetch(`${API}/api/upload`, {
           method: "POST",
@@ -126,8 +130,10 @@ export default function Home() {
           formData.append("files", file);
         }
         formData.append("threshold", threshold.toString());
-        formData.append("padding", padding.toString());
+        formData.append("start_padding", startPadding.toString());
+        formData.append("end_padding", endPadding.toString());
         formData.append("min_silence", minSilence.toString());
+        formData.append("keyword", keyword);
 
         const res = await fetch(`${API}/api/upload-batch`, {
           method: "POST",
@@ -149,7 +155,7 @@ export default function Home() {
       setStatus("error");
       setStep(err instanceof Error ? err.message : "Upload failed");
     }
-  }, [files, threshold, padding, minSilence, pollStatus]);
+  }, [files, threshold, startPadding, endPadding, minSilence, keyword, pollStatus]);
 
   const handleReprocess = useCallback(() => {
     stopPolling();
@@ -192,11 +198,15 @@ export default function Home() {
 
         <Controls
           threshold={threshold}
-          padding={padding}
+          startPadding={startPadding}
+          endPadding={endPadding}
           minSilence={minSilence}
+          keyword={keyword}
           onThresholdChange={setThreshold}
-          onPaddingChange={setPadding}
+          onStartPaddingChange={setStartPadding}
+          onEndPaddingChange={setEndPadding}
           onMinSilenceChange={setMinSilence}
+          onKeywordChange={setKeyword}
           disabled={isProcessing}
         />
 
