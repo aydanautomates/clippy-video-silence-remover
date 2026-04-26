@@ -75,22 +75,50 @@ def _get_video_encoder() -> list[str]:
     return ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
 
 
+def _normalize_video(
+    video_path: str,
+    normalized_path: str,
+    key_frame_times: list[float] | None = None,
+) -> None:
+    """Re-encode video to H.264/AAC MP4 so segment cuts work cleanly."""
+    encoder = _get_video_encoder()
+    force_kf: list[str] = []
+    if key_frame_times:
+        times_str = ",".join(f"{t:.3f}" for t in sorted(set(key_frame_times)))
+        force_kf = ["-force_key_frames", times_str]
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path,
+         "-map", "0:v:0", "-map", "0:a:0",
+         *encoder,
+         *force_kf,
+         "-c:a", "aac", "-b:a", "192k",
+         "-movflags", "+faststart",
+         normalized_path],
+        check=True, capture_output=True,
+    )
+
+
 def build_trimmed_video(
     video_path: str, output_path: str, segments: list[tuple[int, int]],
     keep_segments_dir: str | None = None,
 ) -> list[str]:
-    """Build trimmed video by re-encoding each segment and concatenating via MPEG-TS.
+    """Build trimmed video by normalizing, cutting segments with stream copy, and concatenating.
 
-    Each segment is independently encoded from the original, giving frame-accurate
-    cuts with perfect A/V sync. TS intermediate concat avoids AAC stutter at boundaries.
+    Normalizing once up front lets every cut be a stream copy, which preserves
+    exact A/V sync and avoids AAC priming delay on individual clip exports.
 
     If keep_segments_dir is provided, numbered segment files (001.mp4, 002.mp4, ...)
     are saved there for individual download. Returns list of saved segment paths.
     """
-    encoder = _get_video_encoder()
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Step 1: Cut and re-encode each segment (frame-accurate, no keyframe issues)
+        # Step 1: Normalize to H.264/AAC with keyframes forced at every segment
+        # boundary so stream-copy cuts land frame-accurately.
+        normalized = str(Path(tmpdir) / "normalized.mp4")
+        key_frame_times = [t for start_ms, end_ms in segments
+                           for t in (start_ms / 1000, end_ms / 1000)]
+        _normalize_video(video_path, normalized, key_frame_times=key_frame_times)
+
+        # Step 2: Cut each segment with stream copy (preserves exact A/V sync)
         seg_files = []
         for i, (start_ms, end_ms) in enumerate(segments):
             seg_file = str(Path(tmpdir) / f"seg_{i:04d}.mp4")
@@ -99,19 +127,16 @@ def build_trimmed_video(
             subprocess.run(
                 ["ffmpeg", "-y",
                  "-ss", f"{start_s:.3f}",
-                 "-i", video_path,
+                 "-i", normalized,
                  "-t", f"{duration_s:.3f}",
-                 "-map", "0:v:0", "-map", "0:a:0",
-                 *encoder,
-                 "-c:a", "aac", "-b:a", "192k",
+                 "-c", "copy",
                  "-avoid_negative_ts", "make_zero",
-                 "-movflags", "+faststart",
                  seg_file],
                 check=True, capture_output=True,
             )
             seg_files.append(seg_file)
 
-        # Step 2: Save numbered segments if requested
+        # Step 3: Save numbered segments if requested
         saved_segments: list[str] = []
         if keep_segments_dir:
             Path(keep_segments_dir).mkdir(parents=True, exist_ok=True)
@@ -120,32 +145,16 @@ def build_trimmed_video(
                 shutil.copy2(seg_file, dest)
                 saved_segments.append(dest)
 
-        # Step 3: Convert segments to MPEG-TS for seamless concatenation
-        # (MP4 concat has AAC frame alignment issues that cause stutter)
-        ts_files = []
-        for i, seg_file in enumerate(seg_files):
-            ts_file = str(Path(tmpdir) / f"seg_{i:04d}.ts")
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", seg_file,
-                 "-c", "copy",
-                 "-bsf:v", "h264_mp4toannexb",
-                 "-f", "mpegts",
-                 ts_file],
-                check=True, capture_output=True,
-            )
-            ts_files.append(ts_file)
-
-        # Step 4: Concatenate .ts files and mux back to MP4
+        # Step 4: Concatenate segments with concat demuxer (no re-encode)
         concat_file = str(Path(tmpdir) / "concat.txt")
         with open(concat_file, "w") as f:
-            for ts_file in ts_files:
-                f.write(f"file '{ts_file}'\n")
+            for seg_file in seg_files:
+                f.write(f"file '{seg_file}'\n")
 
         subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
              "-i", concat_file,
              "-c", "copy",
-             "-bsf:a", "aac_adtstoasc",
              "-movflags", "+faststart",
              output_path],
             check=True, capture_output=True,
@@ -161,8 +170,8 @@ def main():
     parser.add_argument("input", help="Input video file path")
     parser.add_argument("output", help="Output video file path")
     parser.add_argument(
-        "--threshold", type=int, default=-35,
-        help="Silence threshold in dB (default: -35)"
+        "--threshold", type=int, default=-40,
+        help="Silence threshold in dB (default: -40)"
     )
     parser.add_argument(
         "--start-padding", type=int, default=80,
@@ -173,12 +182,8 @@ def main():
         help="Padding in ms kept after each speech segment (default: 150)"
     )
     parser.add_argument(
-        "--min-silence", type=int, default=300,
-        help="Minimum silence duration in ms to detect (default: 300)"
-    )
-    parser.add_argument(
-        "--keyword", type=str, default="",
-        help="Bad-take keyword. If set, transcribes audio with faster-whisper and drops any segment whose transcript contains this phrase, plus the segment immediately before it."
+        "--min-silence", type=int, default=250,
+        help="Minimum silence duration in ms to detect (default: 250)"
     )
     args = parser.parse_args()
 
@@ -193,9 +198,6 @@ def main():
         f"End padding: {args.end_padding}ms | "
         f"Min silence: {args.min_silence}ms"
     )
-    if args.keyword:
-        print(f"Bad-take keyword: {args.keyword!r}")
-
     # Step 1: Extract audio
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         audio_path = tmp.name
@@ -212,15 +214,6 @@ def main():
         args.start_padding,
         args.end_padding,
     )
-
-    if segments and args.keyword.strip():
-        print("Transcribing to detect bad takes...")
-        from bad_take_filter import filter_bad_takes
-        before = len(segments)
-        segments = filter_bad_takes(audio_path, segments, args.keyword)
-        dropped = before - len(segments)
-        if dropped:
-            print(f"Dropped {dropped} segment(s) containing the keyword (and preceding takes).")
 
     Path(audio_path).unlink(missing_ok=True)
 
