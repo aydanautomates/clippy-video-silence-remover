@@ -5,10 +5,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import List
+import os
+import signal
 import shutil
+import subprocess
+import threading
+import time
 import zipfile
 
-from processor import jobs, create_job, run_job, create_batch_job, run_batch_job, cleanup_old_jobs
+from processor import jobs, create_job, run_job, create_batch_job, run_batch_job, cleanup_old_jobs, JOBS_DIR
 
 app = FastAPI(title="Clippy API")
 
@@ -25,11 +30,10 @@ MAX_UPLOAD_MB = 2000
 @app.post("/api/upload")
 async def upload_video(
     file: UploadFile = File(...),
-    threshold: int = Form(-35),
+    threshold: int = Form(-40),
     start_padding: int = Form(80),
     end_padding: int = Form(150),
-    min_silence: int = Form(300),
-    keyword: str = Form(""),
+    min_silence: int = Form(250),
 ):
     if not file.filename:
         raise HTTPException(400, "No file provided")
@@ -51,7 +55,7 @@ async def upload_video(
         raise HTTPException(413, f"File too large ({file_size_mb:.0f}MB). Max is {MAX_UPLOAD_MB}MB.")
 
     # Start processing in background
-    run_job(job_id, threshold, start_padding, end_padding, min_silence, keyword)
+    run_job(job_id, threshold, start_padding, end_padding, min_silence)
 
     return {"job_id": job_id}
 
@@ -59,11 +63,10 @@ async def upload_video(
 @app.post("/api/upload-batch")
 async def upload_batch(
     files: List[UploadFile] = File(...),
-    threshold: int = Form(-35),
+    threshold: int = Form(-40),
     start_padding: int = Form(80),
     end_padding: int = Form(150),
-    min_silence: int = Form(300),
-    keyword: str = Form(""),
+    min_silence: int = Form(250),
     order: str = Form(""),
 ):
     if not files:
@@ -96,7 +99,7 @@ async def upload_batch(
         raise HTTPException(413, f"Total size too large ({total_size_mb:.0f}MB). Max is {MAX_UPLOAD_MB}MB.")
 
     # Start batch processing
-    run_batch_job(job_id, threshold, start_padding, end_padding, min_silence, keyword)
+    run_batch_job(job_id, threshold, start_padding, end_padding, min_silence)
 
     return {"job_id": job_id}
 
@@ -249,7 +252,6 @@ async def download_segments(job_id: str):
     if not seg_files:
         raise HTTPException(400, "No segment files available")
 
-    from processor import JOBS_DIR
     zip_path = JOBS_DIR / job_id / "clippy_timeline_clips.zip"
 
     with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_STORED) as zf:
@@ -263,3 +265,95 @@ async def download_segments(job_id: str):
         filename="clippy_timeline_clips.zip",
         media_type="application/zip",
     )
+
+
+@app.post("/api/shutdown")
+async def shutdown():
+    """Kill the frontend, wipe temp files, and shut down the API itself."""
+    threading.Thread(target=_shutdown_sequence, daemon=True).start()
+    return {"status": "shutting down"}
+
+
+CLIPPY_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _pid_cwd(pid: int) -> str | None:
+    """Return the cwd of a PID via lsof, or None if it can't be read."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-p", str(pid), "-a", "-d", "cwd", "-F", "n"],
+            capture_output=True, text=True, check=False, timeout=2,
+        ).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        if line.startswith("n"):
+            return line[1:]
+    return None
+
+
+def _find_clippy_pids() -> list[int]:
+    """PIDs of Clippy-owned processes (uvicorn / next / node running next),
+    scoped to those whose cwd lives inside the Clippy project directory."""
+    result = subprocess.run(
+        ["ps", "-eo", "pid,args"],
+        capture_output=True, text=True, check=False,
+    )
+    tokens = ("uvicorn", "next-server", "next dev", "next start", "node_modules/.bin/next")
+    pids: list[int] = []
+    for line in result.stdout.strip().splitlines()[1:]:
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        pid_str, cmd = parts
+        if not any(tok in cmd for tok in tokens):
+            continue
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        cwd = _pid_cwd(pid)
+        if cwd and cwd.startswith(CLIPPY_ROOT):
+            pids.append(pid)
+    return pids
+
+
+def _shutdown_sequence() -> None:
+    # Let the HTTP response flush before we start killing things.
+    time.sleep(0.5)
+
+    self_pid = os.getpid()
+    parent_pid = os.getppid()
+
+    clippy_pids = _find_clippy_pids()
+    others = [p for p in clippy_pids if p not in (self_pid, parent_pid)]
+
+    # First pass: SIGTERM to give processes a chance to clean up.
+    for pid in others:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    time.sleep(0.5)
+
+    # Second pass: SIGKILL any that stuck around.
+    for pid in others:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    # Wipe tmp contents (keep the directory itself).
+    for item in JOBS_DIR.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item, ignore_errors=True)
+        else:
+            item.unlink(missing_ok=True)
+
+    # Finally, kill the uvicorn supervisor (parent) and this worker (self).
+    try:
+        os.kill(parent_pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    os.kill(self_pid, signal.SIGTERM)

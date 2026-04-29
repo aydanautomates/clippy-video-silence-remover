@@ -7,12 +7,10 @@ interface ControlsProps {
   startPadding: number;
   endPadding: number;
   minSilence: number;
-  keyword: string;
   onThresholdChange: (v: number) => void;
   onStartPaddingChange: (v: number) => void;
   onEndPaddingChange: (v: number) => void;
   onMinSilenceChange: (v: number) => void;
-  onKeywordChange: (v: string) => void;
   disabled?: boolean;
 }
 
@@ -103,12 +101,10 @@ export default function Controls({
   startPadding,
   endPadding,
   minSilence,
-  keyword,
   onThresholdChange,
   onStartPaddingChange,
   onEndPaddingChange,
   onMinSilenceChange,
-  onKeywordChange,
   disabled,
 }: ControlsProps) {
   return (
@@ -158,25 +154,6 @@ export default function Controls({
         onChange={onMinSilenceChange}
         disabled={disabled}
       />
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-neutral-400 flex items-center">
-            Bad-take keyword
-            <Tooltip text="Say this phrase right after a bad take and Clippy will drop that take. Uses AI transcription, so processing takes longer when this is set. First run downloads a ~150MB model. Leave empty to skip." />
-          </span>
-        </div>
-        <input
-          type="text"
-          value={keyword}
-          onChange={(e) => onKeywordChange(e.target.value)}
-          disabled={disabled}
-          placeholder="cut that take"
-          className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-violet-500 focus:outline-none disabled:opacity-50"
-        />
-        <p className="text-xs text-neutral-600">
-          Leave empty to skip transcription.
-        </p>
-      </div>
     </div>
   );
 }

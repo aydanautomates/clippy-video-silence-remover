@@ -16,7 +16,6 @@ export default function Home() {
   const [startPadding, setStartPadding] = useState(80);
   const [endPadding, setEndPadding] = useState(150);
   const [minSilence, setMinSilence] = useState(250);
-  const [keyword, setKeyword] = useState("cut that take");
 
   const [status, setStatus] = useState<Status>("idle");
   const [step, setStep] = useState("");
@@ -107,7 +106,6 @@ export default function Home() {
         formData.append("start_padding", startPadding.toString());
         formData.append("end_padding", endPadding.toString());
         formData.append("min_silence", minSilence.toString());
-        formData.append("keyword", keyword);
 
         const res = await fetch(`${API}/api/upload`, {
           method: "POST",
@@ -133,7 +131,6 @@ export default function Home() {
         formData.append("start_padding", startPadding.toString());
         formData.append("end_padding", endPadding.toString());
         formData.append("min_silence", minSilence.toString());
-        formData.append("keyword", keyword);
 
         const res = await fetch(`${API}/api/upload-batch`, {
           method: "POST",
@@ -155,7 +152,7 @@ export default function Home() {
       setStatus("error");
       setStep(err instanceof Error ? err.message : "Upload failed");
     }
-  }, [files, threshold, startPadding, endPadding, minSilence, keyword, pollStatus]);
+  }, [files, threshold, startPadding, endPadding, minSilence, pollStatus]);
 
   const handleReprocess = useCallback(() => {
     stopPolling();
@@ -177,7 +174,35 @@ export default function Home() {
     setFiles([]);
   }, [handleReprocess]);
 
+  const [shuttingDown, setShuttingDown] = useState(false);
+
+  const handleShutdown = useCallback(async () => {
+    if (!window.confirm("Shut down Clippy? This stops both servers and wipes temp files.")) return;
+    setShuttingDown(true);
+    stopPolling();
+    try {
+      await fetch(`${API}/api/shutdown`, { method: "POST" });
+    } catch {
+      // Expected — the server may die before the response returns.
+    }
+  }, [stopPolling]);
+
   const isProcessing = status === "uploading" || status === "processing";
+
+  if (shuttingDown) {
+    return (
+      <main className="flex-1 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-lg text-center space-y-3">
+          <div className="flex items-center justify-center gap-2">
+            <ClippyLogo className="h-8 w-8" />
+            <h1 className="text-3xl font-bold tracking-tight text-neutral-100">Clippy</h1>
+          </div>
+          <p className="text-sm text-neutral-400">Clippy is shutting down.</p>
+          <p className="text-xs text-neutral-600">You can close this tab.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 flex items-start justify-center px-4 py-12">
@@ -201,12 +226,10 @@ export default function Home() {
           startPadding={startPadding}
           endPadding={endPadding}
           minSilence={minSilence}
-          keyword={keyword}
           onThresholdChange={setThreshold}
           onStartPaddingChange={setStartPadding}
           onEndPaddingChange={setEndPadding}
           onMinSilenceChange={setMinSilence}
-          onKeywordChange={setKeyword}
           disabled={isProcessing}
         />
 
@@ -237,6 +260,16 @@ export default function Home() {
           onReset={handleReset}
           onReprocess={handleReprocess}
         />
+
+        <div className="pt-4 text-center">
+          <button
+            onClick={handleShutdown}
+            disabled={isProcessing}
+            className="text-xs text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Shut down Clippy
+          </button>
+        </div>
       </div>
     </main>
   );
