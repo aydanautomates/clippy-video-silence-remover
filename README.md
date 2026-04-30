@@ -106,8 +106,8 @@ You can also use the silence remover directly from the command line without the 
 pip install -r api/requirements.txt
 python silence_remover.py input.mp4 output.mp4 \
   --threshold -40 \
-  --start-padding 80 --end-padding 150 \
-  --min-silence 500
+  --start-padding 0 --end-padding 0 \
+  --min-silence 250
 ```
 
 ### Arguments
@@ -117,8 +117,8 @@ python silence_remover.py input.mp4 output.mp4 \
 | `input` | Input video file path | (required) |
 | `output` | Output video file path | (required) |
 | `--threshold` | Silence threshold in dB (lower = more sensitive) | `-40` |
-| `--start-padding` | Buffer kept BEFORE each speech segment (ms) | `80` |
-| `--end-padding` | Buffer kept AFTER each speech segment (ms) | `150` |
+| `--start-padding` | Buffer kept BEFORE each speech segment (ms) | `0` |
+| `--end-padding` | Buffer kept AFTER each speech segment (ms) | `0` |
 | `--min-silence` | Minimum silence duration to detect in ms | `250` |
 
 ---
@@ -129,9 +129,9 @@ Good starting point for talking-head videos, podcasts, and screen recordings:
 
 | Setting | Recommended | What it does |
 |---|---|---|
-| Silence Threshold | `-40 dB` | Cuts only the truly quiet parts without eating into soft speech |
-| Start Padding | `80 ms` | Keeps the first syllable of each clip intact |
-| End Padding | `150 ms` | Trailing consonants/breaths usually need more room than openings |
+| Silence Threshold | `-40 dB` | Cuts only the truly quiet parts without eating into soft speech, breaths, or trailing consonants |
+| Start Padding | `0 ms` | No buffer before each clip — bump up if openings sound clipped |
+| End Padding | `0 ms` | No buffer after each clip — bump up if trailing consonants get cut |
 | Min Silence Length | `250 ms` | Removes long dead air but keeps natural pauses |
 
 Every video is different — background noise, mic distance, and speaking style all affect what works best. Use these as a starting point, then adjust with the sliders.
@@ -139,10 +139,10 @@ Every video is different — background noise, mic distance, and speaking style 
 ### Tuning Tips
 
 - **Too much silence left?** Lower the threshold (e.g. `-45 dB` or `-50 dB`)
-- **Cutting into speech?** Raise the threshold (e.g. `-30 dB`) or increase padding
-- **Openings getting clipped?** Raise start padding
-- **Endings getting chopped?** Raise end padding to `200 ms+`
-- **Removing pauses you want to keep?** Increase min silence length to `700 ms+`
+- **Clips splitting in the middle of sentences?** Lower the threshold — soft connector words ("and", "but") may be falling under it
+- **Endings getting chopped?** Raise end padding to `100-200 ms`
+- **Openings getting clipped?** Raise start padding to `50-100 ms`
+- **Removing pauses you want to keep?** Increase min silence length to `500-700 ms`
 
 ---
 

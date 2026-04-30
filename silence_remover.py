@@ -24,9 +24,9 @@ def extract_audio(video_path: str, audio_path: str) -> None:
 def detect_speaking_segments(
     audio_path: str,
     silence_thresh: int,
-    min_silence_len: int = 300,
-    start_padding: int = 80,
-    end_padding: int = 150,
+    min_silence_len: int = 250,
+    start_padding: int = 0,
+    end_padding: int = 0,
 ) -> list[tuple[int, int]]:
     """Detect non-silent segments in audio. Returns list of (start_ms, end_ms)."""
     audio = AudioSegment.from_wav(audio_path)
@@ -174,12 +174,12 @@ def main():
         help="Silence threshold in dB (default: -40)"
     )
     parser.add_argument(
-        "--start-padding", type=int, default=80,
-        help="Padding in ms kept before each speech segment (default: 80)"
+        "--start-padding", type=int, default=0,
+        help="Padding in ms kept before each speech segment (default: 0)"
     )
     parser.add_argument(
-        "--end-padding", type=int, default=150,
-        help="Padding in ms kept after each speech segment (default: 150)"
+        "--end-padding", type=int, default=0,
+        help="Padding in ms kept after each speech segment (default: 0)"
     )
     parser.add_argument(
         "--min-silence", type=int, default=250,
