@@ -10,6 +10,37 @@ from pathlib import Path
 
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
+from pydub.utils import db_to_float
+
+
+_SNAP_WINDOW_MS = 10
+_SNAP_STEP_MS = 5
+_SNAP_SEARCH_MS = 300
+_ONSET_OFFSET_DB = 6
+_MIN_SEGMENT_MS = 33
+
+
+def _snap_segment_start(
+    audio: AudioSegment, start_ms: int, end_ms: int, silence_thresh: int
+) -> int:
+    """Walk forward from start_ms with a tight RMS window to find true speech onset.
+
+    Pydub's detect_nonsilent uses a 250ms RMS window, which can't separate a
+    faint pre-speech sound (breath, click) from real speech if both fall in the
+    same window — the segment start gets dragged back to include the dead air.
+    This snap re-scans the head of each segment with a 10ms window at a stricter
+    threshold to find where speech actually starts.
+    """
+    search_end = min(start_ms + _SNAP_SEARCH_MS, end_ms)
+    onset_thresh = (
+        db_to_float(silence_thresh + _ONSET_OFFSET_DB) * audio.max_possible_amplitude
+    )
+    pos = start_ms
+    while pos + _SNAP_WINDOW_MS <= search_end:
+        if audio[pos : pos + _SNAP_WINDOW_MS].rms >= onset_thresh:
+            return pos
+        pos += _SNAP_STEP_MS
+    return start_ms
 
 
 def extract_audio(video_path: str, audio_path: str) -> None:
@@ -43,10 +74,17 @@ def detect_speaking_segments(
     duration_ms = len(audio)
     padded = []
     for start, end in segments:
+        snapped = _snap_segment_start(audio, start, end, silence_thresh)
+        if end - snapped < _MIN_SEGMENT_MS:
+            continue
         padded.append((
-            max(0, start - start_padding),
+            max(0, snapped - start_padding),
             min(duration_ms, end + end_padding),
         ))
+
+    if not padded:
+        print("Warning: All segments collapsed below frame threshold after onset snap.")
+        return []
 
     # Merge overlapping segments
     merged = [padded[0]]

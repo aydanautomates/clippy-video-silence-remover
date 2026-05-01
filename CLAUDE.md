@@ -32,6 +32,7 @@ cd web && npm install && cd ..
 - Video processing is async — frontend polls `/api/status/:id` every 2 seconds
 - Hardware-accelerated encoding: VideoToolbox (Mac), NVENC (NVIDIA), libx264 fallback
 - `start.sh` strips sensitive env vars (Notion, Supabase, Vercel tokens, etc.) from child processes via `env -u` — prevents token leakage in `ps` output
+- Silence detection has TWO stages in `silence_remover.py`: (1) pydub's `detect_nonsilent` finds rough segment boundaries, (2) `_snap_segment_start` re-scans each segment's head with a tighter 10ms RMS window to find true speech onset. Pydub's 250ms RMS window can't separate breath/clicks from speech if both fall in the same window — the snap fixes that. Padding (start/end) is applied to the snapped onset, not pydub's raw boundary.
 
 ## Known Gotchas
 
